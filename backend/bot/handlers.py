@@ -108,11 +108,15 @@ async def _clear_state(telegram_id: int):
 # ── command handlers ──────────────────────────────────────────────────────────
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = await _get_user(update.effective_user.id)
+    telegram_id = update.effective_user.id
+    logger.info("TELEGRAM_ID recebido: %s", telegram_id)
+    user = await _get_user(telegram_id)
     if not user:
         await update.message.reply_text(
-            "⛔ Você não está cadastrado no sistema.\n"
-            "Solicite acesso ao administrador."
+            f"⛔ Você não está cadastrado no sistema.\n"
+            f"Solicite acesso ao administrador.\n\n"
+            f"_Seu ID: `{telegram_id}`_",
+            parse_mode="Markdown"
         )
         return
 
