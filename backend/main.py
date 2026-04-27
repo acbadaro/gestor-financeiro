@@ -22,6 +22,10 @@ from bot.handlers import (
     start_handler,
 )
 
+
+async def error_handler(update: object, context) -> None:
+    logger.error("Exceção ao processar update:", exc_info=context.error)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -41,6 +45,7 @@ ptb.add_handler(CommandHandler("ajuda",  help_handler))
 ptb.add_handler(CommandHandler("help",   help_handler))
 ptb.add_handler(CallbackQueryHandler(callback_handler))
 ptb.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+ptb.add_error_handler(error_handler)
 
 
 # ── FastAPI lifespan ──────────────────────────────────────────────────────────
