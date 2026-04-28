@@ -1,10 +1,9 @@
-import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -22,15 +21,16 @@ from bot.handlers import (
     start_handler,
 )
 
-
-async def error_handler(update: object, context) -> None:
-    logger.error("Exceção ao processar update:", exc_info=context.error)
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+async def error_handler(update: object, context) -> None:
+    logger.error("Exceção ao processar update:", exc_info=context.error)
+
 
 # ── Telegram Application ──────────────────────────────────────────────────────
 
@@ -52,14 +52,19 @@ ptb.add_error_handler(error_handler)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Iniciando bot Telegram (polling)...")
+    webhook_url = os.environ.get("WEBHOOK_URL", "").rstrip("/")
     await ptb.initialize()
     await ptb.start()
-    await ptb.updater.start_polling(drop_pending_updates=True)
-    logger.info("Bot ativo e aguardando mensagens.")
+    if webhook_url:
+        await ptb.bot.set_webhook(
+            url=f"{webhook_url}/webhook",
+            drop_pending_updates=True,
+        )
+        logger.info("Bot iniciado em modo webhook: %s/webhook", webhook_url)
+    else:
+        logger.warning("WEBHOOK_URL não definido — bot sem webhook.")
     yield
-    logger.info("Encerrando bot...")
-    await ptb.updater.stop()
+    await ptb.bot.delete_webhook()
     await ptb.stop()
     await ptb.shutdown()
 
@@ -67,9 +72,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Gestor Financeiro API", lifespan=lifespan)
 
 
+@app.post("/webhook")
+async def webhook_handler(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, ptb.bot)
+    await ptb.process_update(update)
+    return Response(status_code=200)
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "bot": "running"}
+    return {"status": "ok", "bot": "webhook"}
 
 
 # ── entrypoint ────────────────────────────────────────────────────────────────
