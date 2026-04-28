@@ -64,7 +64,6 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("WEBHOOK_URL não definido — bot sem webhook.")
     yield
-    await ptb.bot.delete_webhook()
     await ptb.stop()
     await ptb.shutdown()
 
