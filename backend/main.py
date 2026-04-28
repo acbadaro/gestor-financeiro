@@ -80,6 +80,10 @@ async def webhook_handler(request: Request):
     return Response(status_code=200)
 
 
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "bot": "webhook"}
