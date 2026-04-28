@@ -2,14 +2,14 @@ import json
 import logging
 from datetime import date
 
-import google.generativeai as genai
+from google import genai
 
 from config import GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=GEMINI_API_KEY)
-_model = genai.GenerativeModel("gemini-2.0-flash-lite")
+_client = genai.Client(api_key=GEMINI_API_KEY)
+_MODEL = "gemini-2.0-flash"
 
 
 def _clean_json(text: str) -> str:
@@ -28,7 +28,7 @@ def parse_transaction(text: str, categories: list[dict], accounts: list[dict]) -
     cats_lines = "\n".join(
         f"  id:{c['id']} | {c['full_path']} | {c['type']} | {c['classification']}"
         for c in categories
-        if c.get("parent_id")  # apenas subcategorias (folhas)
+        if c.get("parent_id")
     )
     accs_lines = "\n".join(
         f"  id:{a['id']} | {a['name']} | {a['type']}"
@@ -68,11 +68,11 @@ Regras:
 - classification: use a classificação da categoria, mas ajuste ao contexto se necessário
 """
 
-    response = _model.generate_content(prompt)
+    response = _client.models.generate_content(model=_MODEL, contents=prompt)
     raw = _clean_json(response.text)
 
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        logger.error("Gemini returned invalid JSON: %s\nRaw: %s", e, raw)
+        logger.error("Gemini retornou JSON inválido: %s\nRaw: %s", e, raw)
         raise ValueError("Não consegui interpretar a transação. Tente descrever de forma diferente.") from e
