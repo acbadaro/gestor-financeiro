@@ -1,0 +1,18 @@
+# Secrets
+backend/.env
+credentials.json
+google_token.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/

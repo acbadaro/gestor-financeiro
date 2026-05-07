@@ -2,14 +2,14 @@ import json
 import logging
 from datetime import date
 
-from google import genai
+from groq import Groq
 
-from config import GEMINI_API_KEY
+from config import GROQ_API_KEY
 
 logger = logging.getLogger(__name__)
 
-_client = genai.Client(api_key=GEMINI_API_KEY)
-_MODEL = "gemini-2.0-flash"
+_client = Groq(api_key=GROQ_API_KEY)
+_MODEL = "llama-3.3-70b-versatile"
 
 
 def _clean_json(text: str) -> str:
@@ -68,11 +68,63 @@ Regras:
 - classification: use a classificação da categoria, mas ajuste ao contexto se necessário
 """
 
-    response = _client.models.generate_content(model=_MODEL, contents=prompt)
-    raw = _clean_json(response.text)
+    response = _client.chat.completions.create(
+        model=_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+    )
+    raw = _clean_json(response.choices[0].message.content)
 
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        logger.error("Gemini retornou JSON inválido: %s\nRaw: %s", e, raw)
+        logger.error("Groq retornou JSON inválido: %s\nRaw: %s", e, raw)
         raise ValueError("Não consegui interpretar a transação. Tente descrever de forma diferente.") from e
+
+
+def categorize_transaction(description: str, tx_type: str, categories: list[dict]) -> dict:
+    """Categorize a transaction from Drive import using only description and type."""
+    leaves = [c for c in categories if c.get("parent_id")]
+    type_label = "despesa" if tx_type == "expense" else "receita"
+
+    cats_lines = "\n".join(
+        f"  id:{c['id']} | {c['name']} | {c['classification']}"
+        for c in leaves
+        if c.get("type") == tx_type
+    )
+
+    prompt = f"""Classifique a transação financeira abaixo.
+
+Descrição: "{description}"
+Tipo: {type_label}
+
+Categorias disponíveis ({type_label}):
+{cats_lines}
+
+Responda SOMENTE com JSON válido:
+{{
+  "category_id": "<id da categoria mais adequada ou null>",
+  "classification": "<essential|controllable|avoidable>"
+}}
+
+Para receitas use classification "essential". Use null em category_id apenas se nenhuma categoria for adequada."""
+
+    response = _client.chat.completions.create(
+        model=_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.1,
+    )
+    raw = _clean_json(response.choices[0].message.content)
+
+    try:
+        result = json.loads(raw)
+        cat_id = result.get("category_id")
+        if isinstance(cat_id, str) and cat_id.startswith("id:"):
+            cat_id = cat_id[3:]
+        return {
+            "category_id":    cat_id,
+            "classification": result.get("classification", "controllable"),
+        }
+    except json.JSONDecodeError:
+        logger.warning("Groq retornou JSON inválido para categorização: %s", raw)
+        return {"category_id": None, "classification": "controllable"}

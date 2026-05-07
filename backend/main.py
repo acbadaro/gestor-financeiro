@@ -3,23 +3,20 @@ import os
 from contextlib import asynccontextmanager
 
 import uvicorn
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request, Response
 from telegram import Update
 from telegram.ext import (
     Application,
-    CallbackQueryHandler,
     CommandHandler,
-    MessageHandler,
-    filters,
 )
 
 from config import TELEGRAM_BOT_TOKEN
 from bot.handlers import (
-    callback_handler,
     help_handler,
-    message_handler,
     start_handler,
 )
+from processor import process_new_files
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,15 +37,16 @@ ptb: Application = (
     .build()
 )
 
-ptb.add_handler(CommandHandler("start",  start_handler))
-ptb.add_handler(CommandHandler("ajuda",  help_handler))
-ptb.add_handler(CommandHandler("help",   help_handler))
-ptb.add_handler(CallbackQueryHandler(callback_handler))
-ptb.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+ptb.add_handler(CommandHandler("start", start_handler))
+ptb.add_handler(CommandHandler("ajuda", help_handler))
+ptb.add_handler(CommandHandler("help",  help_handler))
 ptb.add_error_handler(error_handler)
 
 
 # ── FastAPI lifespan ──────────────────────────────────────────────────────────
+
+scheduler = AsyncIOScheduler()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -63,7 +61,14 @@ async def lifespan(app: FastAPI):
         logger.info("Bot iniciado em modo webhook: %s/webhook", webhook_url)
     else:
         logger.warning("WEBHOOK_URL não definido — bot sem webhook.")
+
+    scheduler.add_job(process_new_files, "interval", hours=12, id="drive_monitor")
+    scheduler.start()
+    logger.info("Scheduler iniciado — verificação do Drive a cada 12h")
+
     yield
+
+    scheduler.shutdown()
     await ptb.stop()
     await ptb.shutdown()
 
