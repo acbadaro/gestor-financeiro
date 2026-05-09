@@ -84,30 +84,46 @@ Regras:
 
 def categorize_transaction(description: str, tx_type: str, categories: list[dict]) -> dict:
     """Categorize a transaction from Drive import using only description and type."""
-    leaves = [c for c in categories if c.get("parent_id")]
+    cat_map = {c["id"]: c for c in categories}
+
+    def full_path(c: dict) -> str:
+        if c.get("parent_id") and c["parent_id"] in cat_map:
+            return f"{cat_map[c['parent_id']]['name']} > {c['name']}"
+        return c["name"]
+
+    leaves = [c for c in categories if c.get("parent_id") and c.get("type") == tx_type]
     type_label = "despesa" if tx_type == "expense" else "receita"
 
     cats_lines = "\n".join(
-        f"  id:{c['id']} | {c['name']} | {c['classification']}"
+        f"  {c['id']} | {full_path(c)} | {c.get('classification','controllable')}"
         for c in leaves
-        if c.get("type") == tx_type
     )
 
-    prompt = f"""Classifique a transação financeira abaixo.
+    # IDs de fallback "Outros" para cada tipo
+    fallback_id = (
+        "d0000000-0000-0000-0012-000000000013" if tx_type == "expense"
+        else "ee000000-0000-0000-0000-000000000015"
+    )
+
+    prompt = f"""Classifique a transação financeira abaixo na subcategoria mais específica.
 
 Descrição: "{description}"
 Tipo: {type_label}
 
-Categorias disponíveis ({type_label}):
+Subcategorias disponíveis (formato: id | Categoria > Subcategoria | classificação):
 {cats_lines}
 
 Responda SOMENTE com JSON válido:
 {{
-  "category_id": "<id da categoria mais adequada ou null>",
+  "category_id": "<uuid exato da subcategoria mais adequada>",
   "classification": "<essential|controllable|avoidable>"
 }}
 
-Para receitas use classification "essential". Use null em category_id apenas se nenhuma categoria for adequada."""
+Regras:
+- Use o uuid exato, sem prefixos
+- Prefira a subcategoria mais específica (ex: "Alimentação > Supermercado" em vez de só "Alimentação")
+- Se não souber classificar, use o id "{fallback_id}" (Outros/Geral)
+- Nunca retorne null em category_id"""
 
     response = _client.chat.completions.create(
         model=_MODEL,
@@ -118,13 +134,16 @@ Para receitas use classification "essential". Use null em category_id apenas se 
 
     try:
         result = json.loads(raw)
-        cat_id = result.get("category_id")
+        cat_id = result.get("category_id") or fallback_id
         if isinstance(cat_id, str) and cat_id.startswith("id:"):
             cat_id = cat_id[3:]
+        valid_ids = {c["id"] for c in leaves}
+        if cat_id not in valid_ids:
+            cat_id = fallback_id
         return {
             "category_id":    cat_id,
             "classification": result.get("classification", "controllable"),
         }
     except json.JSONDecodeError:
         logger.warning("Groq retornou JSON inválido para categorização: %s", raw)
-        return {"category_id": None, "classification": "controllable"}
+        return {"category_id": fallback_id, "classification": "controllable"}
