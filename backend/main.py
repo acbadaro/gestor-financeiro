@@ -4,7 +4,8 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -75,6 +76,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Gestor Financeiro API", lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.post("/webhook")
 async def webhook_handler(request: Request):
@@ -91,6 +99,14 @@ async def root():
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "ok", "bot": "webhook"}
+
+
+@app.post("/admin/recategorize")
+async def trigger_recategorize(background_tasks: BackgroundTasks, all: bool = False):
+    from recategorize import run
+    background_tasks.add_task(run, only_uncategorized=not all)
+    mode = "todas as transações" if all else "transações sem categoria"
+    return {"status": "started", "message": f"Recategorização iniciada para {mode}"}
 
 
 # ── entrypoint ────────────────────────────────────────────────────────────────

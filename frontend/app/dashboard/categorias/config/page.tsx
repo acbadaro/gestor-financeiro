@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Plus, Pencil, Trash2, ChevronRight, ChevronDown, X, Check } from 'lucide-react'
+import { Plus, Pencil, Trash2, ChevronRight, ChevronDown, X, Check, RefreshCw } from 'lucide-react'
 
 type Category = {
   id: string
@@ -36,6 +36,7 @@ export default function CategoriasConfigPage() {
   const [form, setForm] = useState(emptyForm)
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [recatStatus, setRecatStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
 
   async function load() {
     setLoading(true)
@@ -77,6 +78,26 @@ export default function CategoriasConfigPage() {
     setSaving(false)
     setModal({ open: false, editing: null })
     load()
+  }
+
+  async function recategorize(all = false) {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
+    if (!backendUrl) {
+      alert('NEXT_PUBLIC_BACKEND_URL não configurado no .env.local')
+      return
+    }
+    setRecatStatus('running')
+    try {
+      const url = `${backendUrl}/admin/recategorize${all ? '?all=true' : ''}`
+      const res = await fetch(url, { method: 'POST' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      setRecatStatus('done')
+      setTimeout(() => setRecatStatus('idle'), 4000)
+    } catch (e) {
+      console.error(e)
+      setRecatStatus('error')
+      setTimeout(() => setRecatStatus('idle'), 4000)
+    }
   }
 
   async function del(id: string) {
@@ -136,9 +157,24 @@ export default function CategoriasConfigPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Categorias</h1>
-        <Button onClick={() => openAdd()} className="bg-green-600 hover:bg-green-700 text-white gap-2">
-          <Plus size={16} /> Nova Categoria
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => recategorize(false)}
+            disabled={recatStatus === 'running'}
+            className="gap-2 text-sm"
+            title="Categoriza automaticamente as transações sem categoria"
+          >
+            <RefreshCw size={15} className={recatStatus === 'running' ? 'animate-spin' : ''} />
+            {recatStatus === 'running' ? 'Processando...'
+              : recatStatus === 'done'    ? 'Concluído!'
+              : recatStatus === 'error'   ? 'Erro — tente novamente'
+              : 'Auto-categorizar'}
+          </Button>
+          <Button onClick={() => openAdd()} className="bg-green-600 hover:bg-green-700 text-white gap-2">
+            <Plus size={16} /> Nova Categoria
+          </Button>
+        </div>
       </div>
 
       <Card>
